@@ -1,0 +1,154 @@
+import Foundation
+import AppKit
+import Combine
+
+/// Concrete AgentMonitor for Claude Code.
+/// Combines session discovery, log watching, and hook server.
+final class ClaudeCodeMonitor: AgentMonitor {
+    let agentType: AgentType = .claudeCode
+
+    private let sessionDiscovery = SessionDiscovery()
+    private let logWatcher = LogWatcher()
+    private let hookServer = HookServer()
+
+    private let _sessions = CurrentValueSubject<[AgentSession], Never>([])
+    private let _activities = PassthroughSubject<AgentActivity, Never>()
+    private let _permissionRequests = PassthroughSubject<PermissionRequest, Never>()
+
+    private var cancellables = Set<AnyCancellable>()
+    private var pollingTimer: Timer?
+    private var watchedSessionIds = Set<String>()
+
+    var sessionsPublisher: AnyPublisher<[AgentSession], Never> {
+        _sessions.eraseToAnyPublisher()
+    }
+
+    var activitiesPublisher: AnyPublisher<AgentActivity, Never> {
+        _activities.eraseToAnyPublisher()
+    }
+
+    var permissionRequestsPublisher: AnyPublisher<PermissionRequest, Never> {
+        _permissionRequests.eraseToAnyPublisher()
+    }
+
+    // MARK: - Lifecycle
+
+    func startMonitoring() async throws {
+        // 1. Start the hook server
+        try hookServer.start()
+
+        hookServer.onPermissionRequest = { [weak self] request in
+            self?._permissionRequests.send(request)
+
+            // Update session status
+            var sessions = self?._sessions.value ?? []
+            if let idx = sessions.firstIndex(where: { $0.id == request.sessionId }) {
+                sessions[idx].status = .waitingForPermission
+                self?._sessions.send(sessions)
+            }
+        }
+
+        hookServer.onToolEvent = { [weak self] event in
+            // Use tool events for faster UI updates
+            if let toolName = event["tool_name"] as? String,
+               let sessionId = event["session_id"] as? String {
+                var sessions = self?._sessions.value ?? []
+                if let idx = sessions.firstIndex(where: { $0.id == sessionId }) {
+                    sessions[idx].status = .executingTool(toolName: toolName)
+                    self?._sessions.send(sessions)
+                }
+            }
+        }
+
+        // 2. Forward log watcher events
+        logWatcher.activities
+            .sink { [weak self] activity in
+                self?._activities.send(activity)
+            }
+            .store(in: &cancellables)
+
+        logWatcher.statusUpdates
+            .sink { [weak self] update in
+                var sessions = self?._sessions.value ?? []
+                if let idx = sessions.firstIndex(where: { $0.id == update.sessionId }) {
+                    sessions[idx].status = update.status
+                    self?._sessions.send(sessions)
+                }
+            }
+            .store(in: &cancellables)
+
+        // 3. Configure hooks on first launch
+        HookServer.configureHooks()
+
+        // 4. Start polling for sessions
+        refreshSessions()
+        pollingTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+            self?.refreshSessions()
+        }
+    }
+
+    func stopMonitoring() {
+        pollingTimer?.invalidate()
+        pollingTimer = nil
+        logWatcher.stopAll()
+        hookServer.stop()
+    }
+
+    func approvePermission(_ request: PermissionRequest) async throws {
+        hookServer.resolvePermission(toolUseId: request.id, decision: .allow)
+    }
+
+    func denyPermission(_ request: PermissionRequest) async throws {
+        hookServer.resolvePermission(toolUseId: request.id, decision: .deny)
+    }
+
+    func jumpToTerminal(session: AgentSession) throws {
+        guard let terminal = ProcessUtils.findTerminalAncestor(of: session.pid) else {
+            // Fallback: activate Terminal.app
+            if let terminalURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") {
+                NSWorkspace.shared.openApplication(at: terminalURL, configuration: .init())
+            }
+            return
+        }
+
+        let terminalName = terminal.name
+        if terminalName.contains("iTerm") {
+            ITermJumper.activate()
+        } else {
+            TerminalAppJumper.activate()
+        }
+    }
+
+    // MARK: - Private
+
+    private func refreshSessions() {
+        let discovered = sessionDiscovery.discoverSessions()
+        let currentIds = Set(discovered.map(\.id))
+
+        // Start watching new sessions
+        for session in discovered where !watchedSessionIds.contains(session.id) {
+            if let logPath = sessionDiscovery.logPath(for: session) {
+                logWatcher.watchSession(id: session.id, logPath: logPath)
+                watchedSessionIds.insert(session.id)
+            }
+        }
+
+        // Stop watching ended sessions
+        for sessionId in watchedSessionIds where !currentIds.contains(sessionId) {
+            logWatcher.unwatchSession(id: sessionId)
+            watchedSessionIds.remove(sessionId)
+        }
+
+        // Merge with existing status info
+        var updated = discovered
+        let existing = _sessions.value
+        for i in updated.indices {
+            if let match = existing.first(where: { $0.id == updated[i].id }) {
+                updated[i].status = match.status
+                updated[i].currentTask = match.currentTask
+            }
+        }
+
+        _sessions.send(updated)
+    }
+}
