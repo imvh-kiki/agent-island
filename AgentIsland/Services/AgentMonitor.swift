@@ -15,6 +15,12 @@ protocol AgentMonitor: AnyObject {
     /// Publisher for permission requests
     var permissionRequestsPublisher: AnyPublisher<PermissionRequest, Never> { get }
 
+    /// Publisher for user questions
+    var questionsPublisher: AnyPublisher<UserQuestion, Never> { get }
+
+    /// Publisher for plan reviews
+    var planReviewsPublisher: AnyPublisher<PlanReview, Never> { get }
+
     /// Start monitoring
     func startMonitoring() async throws
 
@@ -26,6 +32,15 @@ protocol AgentMonitor: AnyObject {
 
     /// Deny a permission request
     func denyPermission(_ request: PermissionRequest) async throws
+
+    /// Answer a user question
+    func answerQuestion(_ question: UserQuestion, answer: String) async throws
+
+    /// Answer an AskUserQuestion intercepted from PreToolUse
+    func resolvePreToolUseQuestion(requestId: String, answer: String?) async throws
+
+    /// Approve or reject a plan
+    func resolvePlan(_ plan: PlanReview, approved: Bool) async throws
 
     /// Jump to the terminal running this session
     func jumpToTerminal(session: AgentSession) throws

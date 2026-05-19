@@ -5,42 +5,54 @@ struct CollapsedIslandView: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            // Agent 8-bit icon
-            AgentIconView(agentType: session.agentType, size: 22)
+            // Agent icon
+            AgentIconView(agentType: session.agentType, size: 14)
 
-            // Status indicator
-            StatusBadge(status: session.status)
+            // Two-line info
+            VStack(alignment: .leading, spacing: 3) {
+                Text(session.displayName)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
 
-            // Status text
-            statusText
+                HStack(spacing: 6) {
+                    StatusBadge(status: session.status)
 
-            Spacer(minLength: 0)
+                    Text(session.status.displayText)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.55))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
 
-            // Activity indicator when working
-            if session.status.isActive {
-                ProgressDots()
+            Spacer(minLength: 4)
+
+            // Right side: progress dots + elapsed time
+            VStack(alignment: .trailing, spacing: 4) {
+                if session.status.isActive {
+                    ProgressDots(color: .white.opacity(0.6))
+                }
+
+                Text(session.elapsedText)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.3))
+                    .lineLimit(1)
             }
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 16)
         .frame(
             width: IslandSize.collapsedWidth,
             height: IslandSize.collapsedHeight
         )
     }
 
-    @ViewBuilder
-    private var statusText: some View {
-        if let task = session.currentTask {
-            Text(task)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white.opacity(0.9))
-                .lineLimit(1)
-                .truncationMode(.tail)
-        } else {
-            Text(session.status.displayText)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white.opacity(0.7))
-                .lineLimit(1)
+    private func shortenCwd(_ path: String) -> String {
+        let shortened = path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+        let parts = shortened.split(separator: "/")
+        if parts.count > 2, let last = parts.last {
+            return "~/" + String(last)
         }
+        return shortened
     }
 }

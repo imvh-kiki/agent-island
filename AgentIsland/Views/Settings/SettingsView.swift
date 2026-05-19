@@ -1,14 +1,18 @@
 import SwiftUI
+import ServiceManagement
 
 struct SettingsView: View {
-    @AppStorage("autoStart") private var autoStart = false
-    @AppStorage("showInMenuBar") private var showInMenuBar = true
+    @AppStorage("soundEnabled") private var soundEnabled = true
+    @State private var launchAtLogin = false
 
     var body: some View {
         Form {
             Section("General") {
-                Toggle("Launch at login", isOn: $autoStart)
-                Toggle("Show in menu bar", isOn: $showInMenuBar)
+                Toggle("Launch at login", isOn: $launchAtLogin)
+                    .onChange(of: launchAtLogin) { newValue in
+                        setLaunchAtLogin(newValue)
+                    }
+                Toggle("Sound effects", isOn: $soundEnabled)
             }
 
             Section("About") {
@@ -22,6 +26,23 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 350, height: 200)
+        .frame(width: 350, height: 180)
+        .onAppear {
+            launchAtLogin = SMAppService.mainApp.status == .enabled
+        }
+    }
+
+    private func setLaunchAtLogin(_ enabled: Bool) {
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            print("[Settings] Launch at login error: \(error)")
+            // Revert toggle on failure
+            launchAtLogin = SMAppService.mainApp.status == .enabled
+        }
     }
 }

@@ -14,10 +14,15 @@ final class ClaudeCodeMonitor: AgentMonitor {
     private let _sessions = CurrentValueSubject<[AgentSession], Never>([])
     private let _activities = PassthroughSubject<AgentActivity, Never>()
     private let _permissionRequests = PassthroughSubject<PermissionRequest, Never>()
+    private let _questions = PassthroughSubject<UserQuestion, Never>()
+    private let _planReviews = PassthroughSubject<PlanReview, Never>()
 
     private var cancellables = Set<AnyCancellable>()
     private var pollingTimer: Timer?
     private var watchedSessionIds = Set<String>()
+
+    /// Called when a test endpoint is hit on the hook server
+    var onTestAction: ((String) -> Void)?
 
     var sessionsPublisher: AnyPublisher<[AgentSession], Never> {
         _sessions.eraseToAnyPublisher()
@@ -29,6 +34,14 @@ final class ClaudeCodeMonitor: AgentMonitor {
 
     var permissionRequestsPublisher: AnyPublisher<PermissionRequest, Never> {
         _permissionRequests.eraseToAnyPublisher()
+    }
+
+    var questionsPublisher: AnyPublisher<UserQuestion, Never> {
+        _questions.eraseToAnyPublisher()
+    }
+
+    var planReviewsPublisher: AnyPublisher<PlanReview, Never> {
+        _planReviews.eraseToAnyPublisher()
     }
 
     // MARK: - Lifecycle
@@ -60,14 +73,28 @@ final class ClaudeCodeMonitor: AgentMonitor {
             }
         }
 
-        // 2. Forward log watcher events
+        hookServer.onQuestion = { [weak self] question in
+            self?._questions.send(question)
+        }
+
+        hookServer.onPlanReview = { [weak self] plan in
+            self?._planReviews.send(plan)
+        }
+
+        hookServer.onTestAction = { [weak self] action in
+            self?.onTestAction?(action)
+        }
+
+        // 2. Forward log watcher events (dispatch to main to avoid data race with refreshSessions)
         logWatcher.activities
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] activity in
                 self?._activities.send(activity)
             }
             .store(in: &cancellables)
 
         logWatcher.statusUpdates
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] update in
                 var sessions = self?._sessions.value ?? []
                 if let idx = sessions.firstIndex(where: { $0.id == update.sessionId }) {
@@ -96,13 +123,44 @@ final class ClaudeCodeMonitor: AgentMonitor {
 
     func approvePermission(_ request: PermissionRequest) async throws {
         hookServer.resolvePermission(toolUseId: request.id, decision: .allow)
+        clearWaitingStatus(sessionId: request.sessionId, from: .waitingForPermission)
     }
 
     func denyPermission(_ request: PermissionRequest) async throws {
         hookServer.resolvePermission(toolUseId: request.id, decision: .deny)
+        clearWaitingStatus(sessionId: request.sessionId, from: .waitingForPermission)
+    }
+
+    func answerQuestion(_ question: UserQuestion, answer: String) async throws {
+        hookServer.resolveQuestion(questionId: question.id, answer: answer)
+        clearWaitingStatus(sessionId: question.sessionId, from: .waitingForInput)
+    }
+
+    func resolvePreToolUseQuestion(requestId: String, answer: String?) async throws {
+        hookServer.resolvePreToolUseQuestion(requestId: requestId, answer: answer)
+    }
+
+    func resolvePlan(_ plan: PlanReview, approved: Bool) async throws {
+        hookServer.resolvePlanReview(planId: plan.id, approved: approved)
+    }
+
+    /// Clear stale waiting status from the internal sessions subject
+    /// so that `refreshSessions()` doesn't re-propagate it.
+    private func clearWaitingStatus(sessionId: String, from expected: SessionStatus) {
+        var sessions = _sessions.value
+        if let idx = sessions.firstIndex(where: { $0.id == sessionId }),
+           sessions[idx].status == expected {
+            sessions[idx].status = .idle
+            _sessions.send(sessions)
+        }
     }
 
     func jumpToTerminal(session: AgentSession) throws {
+        // Try tmux first — it can jump to the exact pane
+        if TmuxJumper.jumpToPane(containingPID: session.pid) {
+            // Also activate the terminal window
+        }
+
         guard let terminal = ProcessUtils.findTerminalAncestor(of: session.pid) else {
             // Fallback: activate Terminal.app
             if let terminalURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") {
@@ -133,18 +191,27 @@ final class ClaudeCodeMonitor: AgentMonitor {
             }
         }
 
-        // Stop watching ended sessions
+        // Stop watching ended sessions and clean up their resources
         for sessionId in watchedSessionIds where !currentIds.contains(sessionId) {
             logWatcher.unwatchSession(id: sessionId)
+            UsageTracker.shared.resetSession(sessionId)
             watchedSessionIds.remove(sessionId)
         }
 
-        // Merge with existing status info
+        // Merge with existing status info — only keep statuses that represent
+        // a concrete, ongoing state (tool execution, waiting for user).
+        // Transient states like .thinking fall back to discovery's .idle so
+        // that auto-collapse can fire when the agent is truly idle.
         var updated = discovered
         let existing = _sessions.value
         for i in updated.indices {
             if let match = existing.first(where: { $0.id == updated[i].id }) {
-                updated[i].status = match.status
+                switch match.status {
+                case .executingTool, .waitingForPermission, .waitingForInput:
+                    updated[i].status = match.status
+                default:
+                    break // keep discovery's .idle
+                }
                 updated[i].currentTask = match.currentTask
             }
         }

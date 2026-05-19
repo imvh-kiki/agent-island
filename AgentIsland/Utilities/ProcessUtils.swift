@@ -1,9 +1,27 @@
 import Foundation
 
 enum ProcessUtils {
-    /// Check if a process with the given PID is running
+    /// Check if a process with the given PID is running and attached to a terminal
     static func isProcessRunning(pid: Int) -> Bool {
-        kill(Int32(pid), 0) == 0
+        guard kill(Int32(pid), 0) == 0 else { return false }
+
+        // Check if the process still has a TTY (terminal)
+        // If the terminal tab was closed, TTY shows as "??" — treat as dead
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/ps")
+        task.arguments = ["-p", "\(pid)", "-o", "tty="]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        do {
+            try task.run()
+            task.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let tty = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            // "??" or empty means no terminal attached
+            return !tty.isEmpty && tty != "??"
+        } catch {
+            return true // If check fails, assume still running
+        }
     }
 
     /// Get the parent PID of a process
@@ -52,7 +70,11 @@ enum ProcessUtils {
 
     /// Walk up the process tree to find a terminal emulator
     static func findTerminalAncestor(of pid: Int) -> (pid: Int, name: String)? {
-        let terminalNames = ["Terminal", "iTerm2", "Ghostty", "Alacritty", "kitty", "WezTerm", "Warp"]
+        let terminalNames = [
+            "Terminal", "iTerm2", "Ghostty", "Alacritty", "kitty", "WezTerm", "Warp",
+            "Hyper", "Tabby", "Rio", "Prompt", "Wave", "Contour", "foot",
+            "Terminus", "cool-retro-term", "Zed", "WindTerm", "MobaXterm"
+        ]
         var currentPID = pid
 
         for _ in 0..<10 { // Max 10 levels up

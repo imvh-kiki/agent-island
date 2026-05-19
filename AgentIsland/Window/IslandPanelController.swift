@@ -3,19 +3,33 @@ import SwiftUI
 import Combine
 
 /// Manages the Island panel's position, size, and visibility.
+/// Uses a fixed-size transparent panel — SwiftUI handles all visual sizing/animation.
+/// Clicks on transparent areas pass through automatically (isOpaque = false).
 final class IslandPanelController: ObservableObject {
     private(set) var panel: IslandPanel?
     private var cancellables = Set<AnyCancellable>()
+    /// Tracks the current hide animation — used to cancel stale completions
+    private var hideAnimationId: UUID?
 
     /// Distance from top of screen (below menu bar)
     private let topMargin: CGFloat = 8
 
+    /// Fixed panel size — large enough for all states. SwiftUI handles the pill.
+    private let panelWidth: CGFloat = 400
+    private let panelHeight: CGFloat = 400
+
     func setupPanel<Content: View>(with content: Content) {
-        let initialRect = frameForState(.collapsed(dummySession))
+        let initialRect = fixedFrame()
 
         let panel = IslandPanel(contentRect: initialRect)
         let hostingView = NSHostingView(rootView: content)
         hostingView.frame = NSRect(origin: .zero, size: initialRect.size)
+
+        // Fully transparent layer — clipping handled in SwiftUI
+        hostingView.wantsLayer = true
+        hostingView.layer?.backgroundColor = .clear
+        hostingView.layer?.isOpaque = false
+
         panel.contentView = hostingView
 
         self.panel = panel
@@ -30,32 +44,49 @@ final class IslandPanelController: ObservableObject {
     }
 
     func show() {
-        panel?.orderFrontRegardless()
+        guard let panel else { return }
+        hideAnimationId = nil          // Cancel any pending hide completion
+        panel.alphaValue = 1           // In case called mid-hide-animation
+        panel.orderFrontRegardless()
     }
 
     func hide() {
         panel?.orderOut(nil)
     }
 
+    /// Reset to default top-center position
+    func resetPosition() {
+        panel?.hasCustomPosition = false
+        if let panel, panel.isVisible {
+            panel.setFrame(fixedFrame(), display: true)
+        }
+    }
+
     func updateForState(_ state: IslandState) {
         guard let panel else { return }
 
-        let targetFrame = frameForState(state)
-
         if state == .hidden {
+            let animId = UUID()
+            hideAnimationId = animId
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.2
                 context.timingFunction = CAMediaTimingFunction(name: .easeIn)
                 panel.animator().alphaValue = 0
             } completionHandler: { [weak self] in
-                self?.panel?.orderOut(nil)
-                self?.panel?.alphaValue = 1
+                // Only act if this animation hasn't been superseded by show()
+                guard let self, self.hideAnimationId == animId else { return }
+                self.hideAnimationId = nil
+                self.panel?.orderOut(nil)
+                self.panel?.alphaValue = 1
             }
             return
         }
 
         if !panel.isVisible {
-            panel.setFrame(targetFrame, display: true)
+            // Position the fixed-size panel, then fade in
+            if !panel.hasCustomPosition {
+                panel.setFrame(fixedFrame(), display: true)
+            }
             panel.alphaValue = 0
             panel.orderFrontRegardless()
             NSAnimationContext.runAnimationGroup { context in
@@ -66,47 +97,26 @@ final class IslandPanelController: ObservableObject {
             return
         }
 
-        // Animate frame change
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.35
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            panel.animator().setFrame(targetFrame, display: true)
-        }
+        // Panel frame never changes during state transitions —
+        // SwiftUI handles all sizing and animation within the fixed panel.
     }
 
     private func repositionPanel() {
-        // Re-center on current screen after display changes
-        guard let panel, panel.isVisible else { return }
-        // Keep current state size, just re-center
-        let screen = NSScreen.main ?? NSScreen.screens.first!
-        let currentSize = panel.frame.size
-        let x = (screen.frame.width - currentSize.width) / 2 + screen.frame.origin.x
-        let y = screen.frame.maxY - currentSize.height - topMargin - (screen.frame.height - screen.visibleFrame.height - (screen.visibleFrame.origin.y - screen.frame.origin.y))
-        panel.setFrameOrigin(NSPoint(x: x, y: y))
+        guard let panel, panel.isVisible, !panel.hasCustomPosition else { return }
+        panel.setFrame(fixedFrame(), display: true)
     }
 
-    private func frameForState(_ state: IslandState) -> NSRect {
-        let size = state.panelSize
+    /// Fixed frame: centered horizontally, top-aligned below menu bar
+    private func fixedFrame() -> NSRect {
         let screen = NSScreen.main ?? NSScreen.screens.first!
-
-        // Menu bar height
         let menuBarHeight = screen.frame.height - screen.visibleFrame.height -
             (screen.visibleFrame.origin.y - screen.frame.origin.y)
-
-        let x = (screen.frame.width - size.width) / 2 + screen.frame.origin.x
-        let y = screen.frame.maxY - size.height - topMargin - menuBarHeight
-
-        return NSRect(x: x, y: y, width: size.width, height: size.height)
+        let x = (screen.frame.width - panelWidth) / 2 + screen.frame.origin.x
+        let y = screen.frame.maxY - panelHeight - topMargin - menuBarHeight
+        return NSRect(x: x, y: y, width: panelWidth, height: panelHeight)
     }
 
-    /// Dummy session for initial frame calculation
     private var dummySession: AgentSession {
-        AgentSession(
-            id: "init",
-            agentType: .claudeCode,
-            pid: 0,
-            cwd: "",
-            startedAt: Date()
-        )
+        AgentSession(id: "init", agentType: .claudeCode, pid: 0, cwd: "", startedAt: Date())
     }
 }

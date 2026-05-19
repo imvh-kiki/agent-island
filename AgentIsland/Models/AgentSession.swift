@@ -9,6 +9,32 @@ struct AgentSession: Identifiable, Equatable {
     var status: SessionStatus = .idle
     var currentTask: String?
     var lastActivity: AgentActivity?
+    var sessionName: String?
+
+    /// Elapsed time since session started, e.g. "5m", "2h 10m"
+    var elapsedText: String {
+        let seconds = Int(Date().timeIntervalSince(startedAt))
+        if seconds < 60 { return "<1m" }
+        let minutes = seconds / 60
+        if minutes < 60 { return "\(minutes)m" }
+        let hours = minutes / 60
+        let remainingMinutes = minutes % 60
+        if remainingMinutes == 0 { return "\(hours)h" }
+        return "\(hours)h \(remainingMinutes)m"
+    }
+
+    /// Display name priority: sessionName > cwd folder > agent type
+    var displayName: String {
+        if let name = sessionName, !name.isEmpty {
+            return name
+        }
+        let shortened = cwd.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+        let parts = shortened.split(separator: "/")
+        if let last = parts.last, last != "~" {
+            return "\(agentType.displayName) · \(last)"
+        }
+        return agentType.displayName
+    }
 
     static func == (lhs: AgentSession, rhs: AgentSession) -> Bool {
         lhs.id == rhs.id &&

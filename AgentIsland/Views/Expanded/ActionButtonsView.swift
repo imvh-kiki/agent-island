@@ -50,14 +50,14 @@ struct IslandButton: View {
     private var foregroundColor: Color {
         switch style {
         case .normal: return .white.opacity(0.8)
-        case .accent: return .black
+        case .accent: return .white
         }
     }
 
     private var backgroundColor: some ShapeStyle {
         switch style {
         case .normal: return AnyShapeStyle(.white.opacity(0.1))
-        case .accent: return AnyShapeStyle(.green)
+        case .accent: return AnyShapeStyle(.indigo)
         }
     }
 }

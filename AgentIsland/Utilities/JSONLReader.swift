@@ -2,10 +2,11 @@ import Foundation
 
 /// Streaming JSONL reader that tail-follows a file.
 /// Reads new lines as they are appended, similar to `tail -f`.
+/// Thread-safe: all offset mutations are protected by a lock.
 final class JSONLReader {
     private let fileURL: URL
     private var lastOffset: UInt64 = 0
-    private let queue = DispatchQueue(label: "jsonl-reader")
+    private let lock = NSLock()
 
     init(fileURL: URL) {
         self.fileURL = fileURL
@@ -22,13 +23,18 @@ final class JSONLReader {
 
         defer { try? handle.close() }
 
-        // Seek to last known position
-        handle.seek(toFileOffset: lastOffset)
+        lock.lock()
+        let currentOffset = lastOffset
+        lock.unlock()
+
+        handle.seek(toFileOffset: currentOffset)
         let data = handle.readDataToEndOfFile()
 
         guard !data.isEmpty else { return results }
 
-        lastOffset += UInt64(data.count)
+        lock.lock()
+        lastOffset = currentOffset + UInt64(data.count)
+        lock.unlock()
 
         guard let text = String(data: data, encoding: .utf8) else {
             return results
@@ -53,11 +59,15 @@ final class JSONLReader {
         guard let handle = try? FileHandle(forReadingFrom: fileURL) else { return }
         defer { try? handle.close() }
         handle.seekToEndOfFile()
+        lock.lock()
         lastOffset = handle.offsetInFile
+        lock.unlock()
     }
 
     /// Reset to beginning
     func reset() {
+        lock.lock()
         lastOffset = 0
+        lock.unlock()
     }
 }

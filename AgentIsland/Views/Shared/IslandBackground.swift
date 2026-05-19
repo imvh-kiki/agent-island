@@ -5,22 +5,16 @@ struct IslandBackground: View {
 
     var body: some View {
         PillShape(cornerRadius: cornerRadius)
-            .fill(.black.opacity(0.92))
+            .fill(.ultraThinMaterial)
+            .environment(\.colorScheme, .dark)
             .overlay(
                 PillShape(cornerRadius: cornerRadius)
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                .white.opacity(0.15),
-                                .white.opacity(0.05),
-                                .clear
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 0.5
-                    )
+                    .fill(Color.black.opacity(0.35))
             )
-            .shadow(color: .black.opacity(0.3), radius: 20, y: 5)
+            .overlay(
+                PillShape(cornerRadius: cornerRadius)
+                    .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.4), radius: 16, y: 6)
     }
 }
