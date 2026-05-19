@@ -44,19 +44,13 @@ cd agent-island
 swift build -c release
 ```
 
-Build 完成後執行：
-
-```bash
-.build/release/AgentIsland
-```
-
-或打包成 .app：
+Build 完成後，打包成 .app：
 
 ```bash
 ./scripts/bundle.sh
 ```
 
-打包完的 `Agent Island.app` 會在 `build/` 資料夾。
+打包完的 `Agent Island.app` 會在 `build/` 資料夾，把它拖到「應用程式」資料夾，之後就跟一般 app 一樣點兩下開啟。
 
 ## 使用方式
 
