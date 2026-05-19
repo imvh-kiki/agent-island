@@ -88,6 +88,15 @@ A: 到「系統設定 → 隱私與安全性」，找到 Agent Island 點擊「�
 **Q: 小島一直顯示不消失？**
 A: 確認 Claude Code 沒有在等待你的回應。如果確實卡住，可以從 menu bar 重啟。
 
+**Q: 會佔用很多資源嗎？**
+A: 不會。只有每 3 秒讀一次本地 session 檔案、監聽 localhost port 接收事件，閒置時幾乎不吃 CPU 和記憶體。
+
+**Q: 會消耗 AI token 嗎？**
+A: 不會。Agent Island 不會呼叫任何 AI API，只讀取 Claude Code 本地的檔案和 hook 事件。Token 消耗完全是 Claude Code 自己的事。
+
+**Q: 會把我的資料傳到外面嗎？**
+A: 不會。所有通訊都在 localhost（127.0.0.1），沒有任何對外網路連線。讀取的都是本機 `~/.claude/` 底下的檔案。
+
 ## 回報問題
 
 遇到 Bug 歡迎開 [Issue](https://github.com/imvh-kiki/agent-island/issues)，請附上：
