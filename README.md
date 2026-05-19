@@ -30,6 +30,14 @@ macOS 的 Dynamic Island，專為 AI coding agent 設計。當 Claude Code 在�
 
 ### 方法二：從原始碼 Build
 
+先確認有安裝 Xcode Command Line Tools（Swift 編譯器包在裡面），沒裝過的話先執行：
+
+```bash
+xcode-select --install
+```
+
+然後：
+
 ```bash
 git clone https://github.com/imvh-kiki/agent-island.git
 cd agent-island
