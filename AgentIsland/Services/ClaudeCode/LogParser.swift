@@ -39,9 +39,12 @@ enum LogParser {
                     }
                 }
 
-                // Text-only response
-                return .thinking
+                // Text-only response means Claude is outputting, not thinking
+                return .idle
             }
+        case "result":
+            // A result entry means the turn is complete
+            return .idle
         case "system":
             if let subtype = json["subtype"] as? String, subtype == "turn_duration" {
                 return .idle
