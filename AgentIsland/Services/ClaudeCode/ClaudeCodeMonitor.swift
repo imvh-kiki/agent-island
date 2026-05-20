@@ -169,11 +169,9 @@ final class ClaudeCodeMonitor: AgentMonitor {
             return
         }
 
-        let terminalName = terminal.name
-        if terminalName.contains("iTerm") {
-            ITermJumper.activate()
-        } else {
-            TerminalAppJumper.activate()
+        // Activate the detected terminal app by its process ID
+        if let app = NSRunningApplication(processIdentifier: pid_t(terminal.pid)) {
+            app.activate()
         }
     }
 
