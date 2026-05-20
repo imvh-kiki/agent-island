@@ -1,42 +1,42 @@
 # Agent Island
 
-macOS 的 Dynamic Island，專為 AI coding agent 設計。當 Claude Code 在終端機跑的時候，Agent Island 會以浮動小島的形式顯示狀態、攔截權限請求，讓你不用一直盯著終端機。
+A macOS Dynamic Island for AI coding agents. When Claude Code is running in your terminal, Agent Island shows its status as a floating pill at the top of your screen — so you don't have to keep staring at the terminal.
 
 ![macOS 13+](https://img.shields.io/badge/macOS-13%2B-blue)
 ![Swift 5.9](https://img.shields.io/badge/Swift-5.9-orange)
 
-## 功能
+## Features
 
-- **浮動狀態列** — 螢幕頂部的小島，即時顯示 Claude Code 的工作狀態
-- **權限攔截** — 當 Claude Code 需要 approve/deny 時，直接在小島上操作
-- **問題回覆** — Claude Code 提問時，在小島上直接回答
-- **Plan 審核** — 查看並批准/拒絕 Claude Code 的執行計畫
-- **多 Session 支援** — 同時跑多個 Claude Code，全部在一個小島管理
-- **8-bit 音效** — 程式合成的復古音效提示（可關閉）
-- **自動顯示/隱藏** — 有事件時自動彈出，閒置後自動收起
+- **Floating status pill** — real-time status of Claude Code at the top of your screen
+- **Permission handling** — approve or deny tool requests directly from the island
+- **Question responses** — answer Claude Code's questions without switching to the terminal
+- **Plan review** — review and approve/reject execution plans
+- **Multi-session support** — manage multiple Claude Code sessions from a single island
+- **8-bit sound effects** — retro synth notification sounds (can be toggled off)
+- **Auto show/hide** — appears when something needs attention, hides when idle
 
-## 前置需求
+## Prerequisites
 
-- macOS 13 (Ventura) 或以上
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 已安裝並可在終端機使用
+- macOS 13 (Ventura) or later
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and working in your terminal
 
-## 安裝
+## Installation
 
-### 方法一：直接下載（推薦）
+### Option 1: Download (Recommended)
 
-到 [Releases](https://github.com/imvh-kiki/agent-island/releases) 下載最新的 `.app`。
+Download the latest `.app` from [Releases](https://github.com/imvh-kiki/agent-island/releases).
 
-> 目前尚未公證（notarized），首次開啟需要到「系統設定 → 隱私與安全性」允許執行。
+> The app is not notarized yet. On first launch, go to System Settings → Privacy & Security and click "Open Anyway".
 
-### 方法二：從原始碼 Build
+### Option 2: Build from Source
 
-先確認有安裝 Xcode Command Line Tools（Swift 編譯器包在裡面），沒裝過的話先執行：
+Make sure you have Xcode Command Line Tools installed (includes the Swift compiler):
 
 ```bash
 xcode-select --install
 ```
 
-然後：
+Then:
 
 ```bash
 git clone https://github.com/imvh-kiki/agent-island.git
@@ -44,62 +44,62 @@ cd agent-island
 swift build -c release
 ```
 
-Build 完成後，打包成 .app：
+Bundle it as a .app:
 
 ```bash
 ./scripts/bundle.sh
 ```
 
-打包完的 `Agent Island.app` 會在 `build/` 資料夾，把它拖到「應用程式」資料夾，之後就跟一般 app 一樣點兩下開啟。
+The `Agent Island.app` will be in the `build/` folder. Drag it to your Applications folder and launch it like any other app.
 
-## 使用方式
+## Usage
 
-1. 啟動 Agent Island（會出現在 menu bar）
-2. 開一個終端機，跑 `claude` 啟動 Claude Code
-3. Agent Island 會自動偵測到 session 並顯示小島
+1. Launch Agent Island (it appears in the menu bar)
+2. Open a terminal and run `claude` to start Claude Code
+3. Agent Island will automatically detect the session and show the island
 
-### 操作
+### Controls
 
-| 動作 | 說明 |
-|------|------|
-| 點擊小島 | 展開/收合詳細資訊 |
-| Allow / Deny | 回應 Claude Code 的權限請求 |
-| 回答問題 | 直接在小島輸入回覆 |
-| 跳到終端機 | 點擊按鈕切換到對應的終端機視窗 |
-| Menu bar → Show Island | 手動顯示小島 |
-| Menu bar → Quit | 結束 Agent Island |
+| Action | Description |
+|--------|-------------|
+| Click the island | Expand/collapse details |
+| Allow / Deny | Respond to permission requests |
+| Answer questions | Type your reply directly in the island |
+| Jump to Terminal | Switch to the terminal window running the session |
+| Menu bar → Show Island | Manually show the island |
+| Menu bar → Quit | Quit Agent Island |
 
-### 音效
+### Sound Effects
 
-預設開啟，可以在 menu bar 選單中切換。包含：
-- Session 開始
-- 權限請求
-- 問題提示
-- 操作成功/失敗
+Enabled by default, toggleable from the menu bar. Includes:
+- Session start
+- Permission request
+- Question prompt
+- Success / error
 
-## 常見問題
+## FAQ
 
-**Q: 啟動後看不到小島？**
-A: 小島只在偵測到 Claude Code session 時才會出現。先確認 Claude Code 正在執行。
+**Q: I launched it but don't see the island?**
+A: The island only appears when it detects an active Claude Code session. Make sure Claude Code is running.
 
-**Q: 首次開啟被 macOS 擋住？**
-A: 到「系統設定 → 隱私與安全性」，找到 Agent Island 點擊「仍要打開」。
+**Q: macOS won't let me open the app?**
+A: Go to System Settings → Privacy & Security, find Agent Island, and click "Open Anyway".
 
-**Q: 小島一直顯示不消失？**
-A: 確認 Claude Code 沒有在等待你的回應。如果確實卡住，可以從 menu bar 重啟。
+**Q: The island stays visible and won't go away?**
+A: Check if Claude Code is waiting for your response. If it's genuinely stuck, restart from the menu bar.
 
-**Q: 會吃很多電腦效能嗎？**
-A: 不會。它做的事很少——定時看一下有沒有新的 Claude Code session、等 Claude Code 丟事件過來，閒著的時候幾乎不佔資源。
+**Q: Does it use a lot of system resources?**
+A: No. It periodically checks for Claude Code sessions and listens for events — virtually zero CPU and memory when idle.
 
-**Q: 會額外花 AI 的錢嗎？**
-A: 不會。Agent Island 本身不會呼叫任何 AI，它只是幫你顯示 Claude Code 的狀態。費用完全看你 Claude Code 怎麼用。
+**Q: Does it cost extra AI credits?**
+A: No. Agent Island doesn't call any AI APIs. It only displays Claude Code's status. Costs depend entirely on your Claude Code usage.
 
-**Q: 會把我電腦裡的東西傳到外面嗎？**
-A: 不會。所有資料都只在你自己的電腦裡傳遞，完全沒有對外的網路連線。
+**Q: Does it send my data anywhere?**
+A: No. All communication stays on your local machine. There are no outbound network connections.
 
-## 回報問題
+## Report Issues
 
-遇到 Bug 歡迎開 [Issue](https://github.com/imvh-kiki/agent-island/issues)，請附上：
-- macOS 版本
-- 問題描述與重現步驟
-- 如果方便，附上截圖
+Found a bug? Open an [Issue](https://github.com/imvh-kiki/agent-island/issues) with:
+- Your macOS version
+- Steps to reproduce
+- Screenshots if possible
