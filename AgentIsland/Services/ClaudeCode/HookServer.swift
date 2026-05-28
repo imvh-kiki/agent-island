@@ -18,6 +18,8 @@ final class HookServer {
     /// Pending AskUserQuestion answers from PreToolUse interception. Key: tool_use_id
     /// Value is the user's answer string (nil = dismissed/cancelled)
     private var pendingPreToolUseAnswers: [String: (CheckedContinuation<String?, Never>, Date)] = [:]
+    /// Tool-use IDs already approved via PreToolUse — auto-approve subsequent PermissionRequest
+    private var preToolApprovedIds: [String: Date] = [:]
     private let lock = NSLock()
 
     /// Max age for pending continuations before auto-cleanup (5 minutes)
@@ -156,6 +158,7 @@ final class HookServer {
             continuation.resume(returning: nil)
         }
         pendingPreToolUseAnswers.removeAll()
+        preToolApprovedIds.removeAll()
         lock.unlock()
     }
 
@@ -309,8 +312,7 @@ final class HookServer {
         // Route — POST for hooks
         switch (method, routePath) {
         case ("POST", "/hooks/permission"):
-            // PermissionRequest is notification-only; respond immediately
-            sendResponse(connection: connection, statusCode: 200, body: "{}")
+            handlePermissionHook(body: body, connection: connection)
 
         case ("POST", "/hooks/ask-question"):
             handleQuestionHook(body: body, connection: connection)
@@ -461,12 +463,81 @@ final class HookServer {
             let behavior = decision == .allow ? "allow" : "deny"
             self.logToFile("[PreToolUse] decision: \(behavior)")
 
+            if decision == .allow {
+                self.lock.lock()
+                self.preToolApprovedIds[requestId] = Date()
+                self.lock.unlock()
+            }
+
             let response: [String: Any] = [
                 "hookSpecificOutput": [
                     "hookEventName": "PreToolUse",
                     "permissionDecision": behavior
                 ]
             ]
+            let body = self.jsonString(response) ?? "{}"
+            self.sendResponse(connection: connection, statusCode: 200, body: body)
+        }
+    }
+
+    private func handlePermissionHook(body: [String: Any]?, connection: NWConnection) {
+        let toolUseId = body?["tool_use_id"] as? String
+        let toolName = body?["tool_name"] as? String ?? "unknown"
+        let sessionId = body?["session_id"] as? String ?? "unknown"
+
+        // If this tool was already approved via PreToolUse, auto-approve
+        if let id = toolUseId {
+            lock.lock()
+            let wasApproved = preToolApprovedIds.removeValue(forKey: id) != nil
+            lock.unlock()
+
+            if wasApproved {
+                logToFile("[PermissionRequest] auto-approved (already approved via PreToolUse) id=\(id)")
+                let response = PermissionDecision.allow.hookResponse
+                let body = jsonString(response) ?? "{}"
+                sendResponse(connection: connection, statusCode: 200, body: body)
+                return
+            }
+        }
+
+        // Not previously approved — show Dynamic Island UI and block
+        let requestId = toolUseId ?? UUID().uuidString
+
+        logToFile("[PermissionRequest] permission prompt for \(toolName) id=\(requestId)")
+
+        var toolInput: [String: String] = [:]
+        if let input = body?["tool_input"] as? [String: Any] {
+            for (key, value) in input {
+                toolInput[key] = "\(value)"
+            }
+        }
+
+        let request = PermissionRequest(
+            id: requestId,
+            sessionId: sessionId,
+            toolName: toolName,
+            toolInput: toolInput,
+            timestamp: Date()
+        )
+
+        DispatchQueue.main.async { [weak self] in
+            self?.onPermissionRequest?(request)
+        }
+
+        Task {
+            let decision = await withCheckedContinuation { (continuation: CheckedContinuation<PermissionDecision, Never>) in
+                self.lock.lock()
+                if let old = self.pendingDecisions.removeValue(forKey: requestId) {
+                    old.0.resume(returning: .deny)
+                }
+                self.pendingDecisions[requestId] = (continuation, Date())
+                self.lock.unlock()
+            }
+
+            let behavior = decision == .allow ? "allow" : "deny"
+            self.logToFile("[PermissionRequest] decision: \(behavior)")
+
+            let response = (decision == .allow ? PermissionDecision.allow : PermissionDecision.deny).hookResponse
             let body = self.jsonString(response) ?? "{}"
             self.sendResponse(connection: connection, statusCode: 200, body: body)
         }
@@ -569,6 +640,7 @@ final class HookServer {
             continuation.resume(returning: nil)
             pendingPreToolUseAnswers.removeValue(forKey: id)
         }
+        preToolApprovedIds = preToolApprovedIds.filter { now.timeIntervalSince($0.value) <= continuationTimeout }
 
         lock.unlock()
     }

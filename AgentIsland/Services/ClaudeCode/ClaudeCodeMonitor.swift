@@ -157,9 +157,7 @@ final class ClaudeCodeMonitor: AgentMonitor {
 
     func jumpToTerminal(session: AgentSession) throws {
         // Try tmux first — it can jump to the exact pane
-        if TmuxJumper.jumpToPane(containingPID: session.pid) {
-            // Also activate the terminal window
-        }
+        TmuxJumper.jumpToPane(containingPID: session.pid)
 
         guard let terminal = ProcessUtils.findTerminalAncestor(of: session.pid) else {
             // Fallback: activate Terminal.app
@@ -171,7 +169,15 @@ final class ClaudeCodeMonitor: AgentMonitor {
 
         // Activate the detected terminal app by its process ID
         if let app = NSRunningApplication(processIdentifier: pid_t(terminal.pid)) {
-            app.activate()
+            app.unhide()
+            app.activate(options: .activateIgnoringOtherApps)
+        } else {
+            // Fallback: activate by bundle URL
+            let ws = NSWorkspace.shared
+            for runningApp in ws.runningApplications where runningApp.localizedName?.localizedCaseInsensitiveContains(terminal.name.components(separatedBy: "/").last ?? "") == true {
+                runningApp.activate(options: .activateIgnoringOtherApps)
+                return
+            }
         }
     }
 

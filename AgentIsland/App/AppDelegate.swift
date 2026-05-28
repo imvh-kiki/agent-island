@@ -108,6 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
         menu.addItem(NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "Restart", action: #selector(restartApp), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Quit Agent Island", action: #selector(quitApp), keyEquivalent: "q"))
 
         statusItem?.menu = menu
@@ -144,6 +145,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWindow.center()
         settingsWindow.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func restartApp() {
+        let executableURL = Bundle.main.executableURL ?? URL(fileURLWithPath: ProcessInfo.processInfo.arguments[0])
+        let task = Process()
+        task.executableURL = executableURL
+        task.arguments = []
+        try? task.run()
+        NSApp.terminate(nil)
     }
 
     @objc private func quitApp() {
