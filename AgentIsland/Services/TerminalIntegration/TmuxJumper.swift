@@ -3,6 +3,7 @@ import Foundation
 /// Jump to a specific tmux pane by finding which pane owns a process
 enum TmuxJumper {
     /// Try to jump to the tmux pane running a given PID
+    @discardableResult
     static func jumpToPane(containingPID pid: Int) -> Bool {
         // Check if tmux is available
         guard isTmuxRunning() else { return false }

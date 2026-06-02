@@ -40,6 +40,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case "permission": self.testPermission()
             case "multi":      self.testMultiSession()
             case "hide":       self.hideIsland()
+            case "question":   self.testQuestion()
+            case "planreview": self.testPlanReview()
+            case "planreviewlong": self.testPlanReviewLong()
+            case "midexpanded": self.testMidExpanded()
             default: break
             }
         }
@@ -164,7 +168,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     #if DEBUG
     private var mockSession: AgentSession {
-        AgentSession(
+        // Prefer a real session so test states aren't expired by handleSessionsUpdate
+        if let real = viewModel.sessions.first {
+            return AgentSession(
+                id: real.id,
+                agentType: real.agentType,
+                pid: real.pid,
+                cwd: real.cwd,
+                startedAt: real.startedAt,
+                status: .executingTool(toolName: "Bash"),
+                currentTask: "Building Agent Island..."
+            )
+        }
+        return AgentSession(
             id: "test-session-001",
             agentType: .claudeCode,
             pid: Int(ProcessInfo.processInfo.processIdentifier),
@@ -250,6 +266,98 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         viewModel.transitionTo(.permissionPrompt(mockSession, mockRequest))
+    }
+
+    @objc private func testQuestion() {
+        viewModel.sessions = [mockSession]
+        panelController.show()
+
+        let options: [QuestionOption] = [
+            QuestionOption(id: "opt-1", label: "Indigo 漸層", description: "目前的 indigo 漸層 shimmer"),
+            QuestionOption(id: "opt-2", label: "紫色漸層", description: "跟按鈕色系一致的紫色"),
+            QuestionOption(id: "opt-3", label: "白色微光", description: "更低調的白色 shimmer"),
+        ]
+
+        let subQuestion = SubQuestion(
+            id: "sq-1",
+            question: "Mid-expanded 的 shimmer 進度條顏色你喜歡哪種？",
+            header: "進度條顏色",
+            options: options,
+            multiSelect: false
+        )
+
+        let question = UserQuestion(
+            id: "test-q-\(UUID().uuidString.prefix(8))",
+            sessionId: "test-session-001",
+            questions: [subQuestion],
+            timestamp: Date()
+        )
+
+        viewModel.transitionTo(.askQuestion(mockSession, question))
+    }
+
+    @objc private func testPlanReview() {
+        viewModel.sessions = [mockSession]
+        panelController.show()
+
+        let plan = PlanReview(
+            id: "test-plan-\(UUID().uuidString.prefix(8))",
+            sessionId: "test-session-001",
+            title: "Add Dark Mode Support",
+            content: """
+            Update `ThemeManager` to toggle dark/light mode.
+            Affects `AppDelegate` and `SettingsView`.
+            """,
+            timestamp: Date()
+        )
+
+        viewModel.transitionTo(.planReview(mockSession, plan))
+    }
+
+    @objc private func testPlanReviewLong() {
+        viewModel.sessions = [mockSession]
+        panelController.show()
+
+        let plan = PlanReview(
+            id: "test-plan-long-\(UUID().uuidString.prefix(8))",
+            sessionId: "test-session-001",
+            title: "Refactor Authentication Module",
+            content: """
+            ## Context
+            Replace legacy session-based auth with JWT tokens.
+
+            ## Changes
+            1. Add `JWTService` with sign/verify methods
+            2. Update `AuthMiddleware` to validate Bearer tokens
+            3. Migrate user sessions to token-based flow
+            4. Add refresh token rotation
+            5. Write unit tests for token expiry edge cases
+            6. Update API documentation
+
+            ## Files
+            - `Sources/Auth/JWTService.swift` (new)
+            - `Sources/Middleware/AuthMiddleware.swift`
+            - `Sources/Models/User.swift`
+            - `Tests/AuthTests.swift` (new)
+            - `Docs/api-auth.md`
+            """,
+            timestamp: Date()
+        )
+
+        viewModel.transitionTo(.planReview(mockSession, plan))
+    }
+
+    @objc private func testMidExpanded() {
+        panelController.show()
+
+        let activity = AgentActivity(
+            id: UUID(),
+            timestamp: Date(),
+            sessionId: "test-session-001",
+            kind: .bashCommand(command: "swift build", description: "Build the project")
+        )
+        viewModel.activities = [activity]
+        viewModel.transitionTo(.midExpanded(mockSession))
     }
 
     /// Send a real HTTP request to the hook server to test the full flow

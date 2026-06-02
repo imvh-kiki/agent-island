@@ -22,6 +22,7 @@ final class IslandViewModel: ObservableObject {
     private var monitors: [any AgentMonitor] = []
     private var cancellables = Set<AnyCancellable>()
     private var autoCollapseTask: Task<Void, Never>?
+    private var midCollapseTask: Task<Void, Never>?
     /// Track if we drilled in from multi-session view
     private(set) var cameFromMultiSession = false
     /// Sessions manually dismissed by the user (hidden until process actually ends)
@@ -159,6 +160,12 @@ final class IslandViewModel: ObservableObject {
             cameFromMultiSession = false
             transitionTo(.expanded(session))
             cancelAutoCollapse()
+            cancelMidCollapse()
+        case .midExpanded(let session):
+            cameFromMultiSession = false
+            transitionTo(.expanded(session))
+            cancelAutoCollapse()
+            cancelMidCollapse()
         case .expanded:
             collapse()
             return
@@ -175,15 +182,20 @@ final class IslandViewModel: ObservableObject {
 
     func collapse() {
         switch state {
-        case .expanded:
+        case .expanded(let session):
             if cameFromMultiSession && sessions.count >= 2 {
-                // Go back to session list instead of collapsing
                 cameFromMultiSession = false
                 transitionTo(.expandedMulti(sessions))
+            } else if session.status.isActive {
+                // Still active — drop to mid-expanded instead of fully collapsing
+                cameFromMultiSession = false
+                transitionTo(.midExpanded(session))
             } else {
                 cameFromMultiSession = false
                 collapseToAppropriateState()
             }
+        case .midExpanded:
+            collapseToAppropriateState()
         case .permissionPrompt, .askQuestion, .planReview:
             collapseToAppropriateState()
         case .expandedMulti(let sessions):
@@ -370,8 +382,8 @@ final class IslandViewModel: ObservableObject {
 
     private var currentSession: AgentSession? {
         switch state {
-        case .collapsed(let s), .expanded(let s), .permissionPrompt(let s, _),
-             .askQuestion(let s, _), .planReview(let s, _):
+        case .collapsed(let s), .midExpanded(let s), .expanded(let s),
+             .permissionPrompt(let s, _), .askQuestion(let s, _), .planReview(let s, _):
             return s
         case .multiSession(let ss), .expandedMulti(let ss):
             return ss.first
@@ -401,17 +413,37 @@ final class IslandViewModel: ObservableObject {
                 }
             }
 
-        case .collapsed, .expanded:
+        case .collapsed, .midExpanded, .expanded:
             if newSessions.isEmpty {
                 transitionTo(.hidden)
             } else if newSessions.count >= 2 {
                 transitionTo(.multiSession(newSessions))
                 if !hasActive { scheduleAutoCollapse() }
             } else if let session = newSessions.first {
+                // Auto-expand to midExpanded when tool starts executing
+                let isExecutingTool: Bool
+                if case .executingTool = session.status { isExecutingTool = true } else { isExecutingTool = false }
+
                 switch state {
                 case .collapsed:
+                    if isExecutingTool {
+                        // Hook event fired → session status is now executingTool → auto-expand
+                        transitionTo(.midExpanded(session))
+                        cancelAutoCollapse()
+                        cancelMidCollapse()
+                    } else {
+                        withAnimation(IslandSpring.micro) {
+                            state = .collapsed(session)
+                        }
+                    }
+                case .midExpanded:
                     withAnimation(IslandSpring.micro) {
-                        state = .collapsed(session)
+                        state = .midExpanded(session)
+                    }
+                    if hasActive {
+                        cancelMidCollapse()
+                    } else {
+                        scheduleMidCollapse()
                     }
                 case .expanded:
                     withAnimation(IslandSpring.micro) {
@@ -422,7 +454,8 @@ final class IslandViewModel: ObservableObject {
                 }
                 if hasActive {
                     cancelAutoCollapse()
-                } else {
+                } else if !(state == .midExpanded(session)) {
+                    // midExpanded has its own collapse timer
                     scheduleAutoCollapse()
                 }
             }
@@ -462,8 +495,10 @@ final class IslandViewModel: ObservableObject {
             pendingQuestions.removeAll { !activeIds.contains($0.sessionId) }
             pendingPlans.removeAll { !activeIds.contains($0.sessionId) }
 
-            // If the session for the current prompt is gone, expire it
-            if !activeIds.contains(s.id) {
+            // If the session for the current prompt is gone, expire it.
+            // Skip expiry when newSessions is empty — could be a brief monitoring gap
+            // or a test-triggered state with no real sessions.
+            if !newSessions.isEmpty && !activeIds.contains(s.id) {
                 showNextPendingOrCollapse()
             }
         }
@@ -491,6 +526,27 @@ final class IslandViewModel: ObservableObject {
             } else if let session = sessions.first {
                 transitionTo(.collapsed(session))
             }
+        }
+
+        // Auto-expand to midExpanded when tool activity arrives while collapsed
+        if case .collapsed(let session) = state, isToolActivity(activity) {
+            transitionTo(.midExpanded(session))
+            cancelAutoCollapse()
+            cancelMidCollapse()
+        }
+
+        // If already midExpanded and new activity arrives, cancel mid-collapse timer
+        if case .midExpanded = state, isToolActivity(activity) {
+            cancelMidCollapse()
+        }
+    }
+
+    private func isToolActivity(_ activity: AgentActivity) -> Bool {
+        switch activity.kind {
+        case .toolUse, .fileRead, .fileWrite, .bashCommand, .thinking:
+            return true
+        default:
+            return false
         }
     }
 
@@ -580,5 +636,22 @@ final class IslandViewModel: ObservableObject {
     private func cancelAutoCollapse() {
         autoCollapseTask?.cancel()
         autoCollapseTask = nil
+    }
+
+    private func scheduleMidCollapse() {
+        midCollapseTask?.cancel()
+        midCollapseTask = Task {
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            if case .midExpanded(let session) = state, allSessionsIdle {
+                transitionTo(.collapsed(session))
+                scheduleAutoCollapse()
+            }
+        }
+    }
+
+    private func cancelMidCollapse() {
+        midCollapseTask?.cancel()
+        midCollapseTask = nil
     }
 }

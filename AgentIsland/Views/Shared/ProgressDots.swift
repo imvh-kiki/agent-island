@@ -34,21 +34,31 @@ struct ProgressDots: View {
 
 /// Press feedback: scale(0.97) on press — buttons must feel responsive (Emil Kowalski)
 struct IslandButtonStyle: ButtonStyle {
+    @State private var isHovered = false
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
             .opacity(configuration.isPressed ? 0.9 : 1.0)
+            .brightness(isHovered && !configuration.isPressed ? 0.05 : 0)
             .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
+            .animation(.easeOut(duration: 0.15), value: isHovered)
+            .onHover { isHovered = $0 }
     }
 }
 
-/// Primary action button (indigo Allow / Send / Approve)
+/// Primary action button (indigo Allow / Send / Approve) with glow shadow
 struct IslandPrimaryButtonStyle: ButtonStyle {
+    @State private var isHovered = false
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
-            .brightness(configuration.isPressed ? -0.05 : 0)
+            .brightness(configuration.isPressed ? -0.05 : (isHovered ? 0.05 : 0))
+            .shadow(color: .indigo.opacity(isHovered ? 0.5 : 0.3), radius: isHovered ? 12 : 8, y: 2)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .animation(.easeOut(duration: 0.15), value: isHovered)
+            .onHover { isHovered = $0 }
     }
 }
 
@@ -72,6 +82,7 @@ struct StatusBadge: View {
         Circle()
             .fill(color)
             .frame(width: 6, height: 6)
+            .shadow(color: color.opacity(status.isActive ? 0.5 : 0.2), radius: status.isActive ? 4 : 2)
             .overlay(
                 Circle()
                     .fill(color.opacity(0.35))

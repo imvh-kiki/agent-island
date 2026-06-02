@@ -33,6 +33,13 @@ struct IslandContainerView: View {
             CollapsedIslandView(session: session)
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
 
+        case .midExpanded(let session):
+            MidExpandedIslandView(
+                session: session,
+                latestActivity: viewModel.activitiesForCurrentSession.last
+            )
+            .transition(.opacity.combined(with: .scale(scale: 0.96)))
+
         case .expanded(let session):
             ExpandedIslandView(
                 session: session,

@@ -5,9 +5,13 @@ struct IslandTransition {
         switch (oldState, newState) {
         case (.hidden, .collapsed), (.hidden, .multiSession):
             return IslandSpring.expand
-        case (.collapsed, .expanded), (.multiSession, .expandedMulti):
+        case (.collapsed, .midExpanded), (.collapsed, .expanded), (.multiSession, .expandedMulti):
             return IslandSpring.expand
-        case (.expanded, .collapsed), (.expandedMulti, .multiSession):
+        case (.midExpanded, .collapsed), (.expanded, .collapsed), (.expandedMulti, .multiSession):
+            return IslandSpring.dismiss
+        case (.midExpanded, .expanded):
+            return IslandSpring.expand
+        case (.expanded, .midExpanded):
             return IslandSpring.dismiss
         case (.expanded, .multiSession), (.collapsed, .multiSession):
             return IslandSpring.expand

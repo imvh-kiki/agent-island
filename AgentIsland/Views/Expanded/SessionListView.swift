@@ -58,6 +58,7 @@ struct SessionListView: View {
 private struct SessionCard: View {
     let session: AgentSession
     let onDismiss: () -> Void
+    @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -107,10 +108,16 @@ private struct SessionCard: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
-    }
-
-    private func shortenCwd(_ path: String) -> String {
-        path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+        .background(
+            isHovered ? .white.opacity(0.08) : .white.opacity(0.05),
+            in: RoundedRectangle(cornerRadius: 10)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(isHovered ? .indigo.opacity(0.2) : .clear, lineWidth: 1)
+        )
+        .onHover { over in
+            withAnimation(.easeOut(duration: 0.15)) { isHovered = over }
+        }
     }
 }

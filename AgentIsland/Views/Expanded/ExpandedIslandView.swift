@@ -162,17 +162,18 @@ struct ExpandedIslandView: View {
 
 struct ActivityRow: View {
     let activity: AgentActivity
+    @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: activity.kind.iconSystemName)
                 .font(.system(size: 9))
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(.white.opacity(isHovered ? 0.55 : 0.4))
                 .frame(width: 14)
 
             Text(activity.kind.displayText)
                 .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.65))
+                .foregroundStyle(.white.opacity(isHovered ? 0.8 : 0.65))
                 .lineLimit(1)
                 .truncationMode(.middle)
 
@@ -182,7 +183,15 @@ struct ActivityRow: View {
                 .font(.system(size: 9))
                 .foregroundStyle(.white.opacity(0.25))
         }
-        .padding(.vertical, 1)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(
+            isHovered ? Color.white.opacity(0.06) : Color.clear,
+            in: RoundedRectangle(cornerRadius: 6)
+        )
+        .onHover { over in
+            withAnimation(.easeOut(duration: 0.12)) { isHovered = over }
+        }
     }
 
     private func timeAgo(_ date: Date) -> String {

@@ -49,6 +49,11 @@ final class HookServer {
     /// Called on tool use events (for real-time UI updates)
     var onToolEvent: (([String: Any]) -> Void)?
 
+    /// Called when a session's turn ends (Stop hook). Carries the session id so
+    /// the monitor can reset status to idle — otherwise the Island stays stuck on
+    /// the last tool (e.g. "running Read") after the agent has finished.
+    var onStop: ((String) -> Void)?
+
     /// Called on test endpoint hits — lets AppDelegate show mock UI states
     var onTestAction: ((String) -> Void)?
 
@@ -328,6 +333,9 @@ final class HookServer {
             sendResponse(connection: connection, statusCode: 200, body: "{}")
 
         case ("POST", "/hooks/stop"):
+            if let sessionId = body?["session_id"] as? String {
+                DispatchQueue.main.async { [weak self] in self?.onStop?(sessionId) }
+            }
             onToolEvent?(body ?? [:])
             sendResponse(connection: connection, statusCode: 200, body: "{}")
 
@@ -352,6 +360,22 @@ final class HookServer {
         case (_, "/test/multi"):
             DispatchQueue.main.async { self.onTestAction?("multi") }
             sendResponse(connection: connection, statusCode: 200, body: #"{"status":"ok","action":"multi"}"#)
+
+        case (_, "/test/question"):
+            DispatchQueue.main.async { self.onTestAction?("question") }
+            sendResponse(connection: connection, statusCode: 200, body: #"{"status":"ok","action":"question"}"#)
+
+        case (_, "/test/planreview"):
+            DispatchQueue.main.async { self.onTestAction?("planreview") }
+            sendResponse(connection: connection, statusCode: 200, body: #"{"status":"ok","action":"planreview"}"#)
+
+        case (_, "/test/planreviewlong"):
+            DispatchQueue.main.async { self.onTestAction?("planreviewlong") }
+            sendResponse(connection: connection, statusCode: 200, body: #"{"status":"ok","action":"planreviewlong"}"#)
+
+        case (_, "/test/midexpanded"):
+            DispatchQueue.main.async { self.onTestAction?("midexpanded") }
+            sendResponse(connection: connection, statusCode: 200, body: #"{"status":"ok","action":"midexpanded"}"#)
         #endif
 
         default:
@@ -397,13 +421,17 @@ final class HookServer {
                 }
 
                 if let answer {
-                    // User answered — deny the tool (prevent terminal UI) and embed the answer
+                    // User answered on the Island. PreToolUse hooks cannot inject a
+                    // tool_result, so we deny the tool (to suppress the terminal UI) and
+                    // pass the answer back via `permissionDecisionReason` — the field
+                    // Claude Code surfaces to the model. (Older builds used `reason`,
+                    // which newer Claude Code silently ignores, dropping the answer.)
                     self.logToFile("[PreToolUse] question answered via Dynamic Island: \(answer)")
                     let response: [String: Any] = [
                         "hookSpecificOutput": [
                             "hookEventName": "PreToolUse",
                             "permissionDecision": "deny",
-                            "reason": "User already answered via Dynamic Island UI. Selected: \"\(answer)\""
+                            "permissionDecisionReason": "The user already answered this AskUserQuestion via the Agent Island UI. Their answer: \"\(answer)\". Treat this as the user's response and continue — do not call AskUserQuestion again."
                         ]
                     ]
                     let body = self.jsonString(response) ?? "{}"
@@ -798,21 +826,23 @@ final class HookServer {
 
         var hooks = settings["hooks"] as? [String: Any] ?? [:]
 
-        let hookDefs: [(String, String, Int)] = [
-            ("PermissionRequest", "http://127.0.0.1:31415/hooks/permission\(tokenQuery)", 120),
-            ("PreToolUse", "http://127.0.0.1:31415/hooks/pre-tool-use\(tokenQuery)", 120),
-            ("PostToolUse", "http://127.0.0.1:31415/hooks/post-tool-use\(tokenQuery)", 5),
-            ("Stop", "http://127.0.0.1:31415/hooks/stop\(tokenQuery)", 5),
+        // matcher per event — PreToolUse only intercepts AskUserQuestion so other
+        // tools (incl. read-only ones) don't round-trip through the Island.
+        let hookDefs: [(String, String, String, Int)] = [
+            ("PermissionRequest", ".*", "http://127.0.0.1:31415/hooks/permission\(tokenQuery)", 120),
+            ("PreToolUse", "AskUserQuestion", "http://127.0.0.1:31415/hooks/pre-tool-use\(tokenQuery)", 120),
+            ("PostToolUse", ".*", "http://127.0.0.1:31415/hooks/post-tool-use\(tokenQuery)", 5),
+            ("Stop", ".*", "http://127.0.0.1:31415/hooks/stop\(tokenQuery)", 5),
         ]
 
-        for (eventName, url, timeout) in hookDefs {
+        for (eventName, matcher, url, timeout) in hookDefs {
             let newHook: [String: Any] = [
                 "type": "http",
                 "url": url,
                 "timeout": timeout
             ]
             let newEntry: [String: Any] = [
-                "matcher": ".*",
+                "matcher": matcher,
                 "hooks": [newHook]
             ]
 

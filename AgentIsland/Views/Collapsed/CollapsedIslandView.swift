@@ -46,13 +46,4 @@ struct CollapsedIslandView: View {
             height: IslandSize.collapsedHeight
         )
     }
-
-    private func shortenCwd(_ path: String) -> String {
-        let shortened = path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
-        let parts = shortened.split(separator: "/")
-        if parts.count > 2, let last = parts.last {
-            return "~/" + String(last)
-        }
-        return shortened
-    }
 }

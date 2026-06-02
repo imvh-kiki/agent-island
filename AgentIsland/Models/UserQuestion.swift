@@ -6,7 +6,8 @@ struct UserQuestion: Identifiable, Equatable {
     let questions: [SubQuestion]  // 1-4 questions from AskUserQuestion
     let timestamp: Date
     /// When set, this question was intercepted from PreToolUse.
-    /// The answer will be sent back by denying the tool with the answer embedded.
+    /// The answer is returned by denying the tool and passing the answer back via
+    /// the hook's `permissionDecisionReason`, which Claude Code surfaces to the model.
     var preToolUseRequestId: String?
 
     /// Convenience: first question text (for display)
