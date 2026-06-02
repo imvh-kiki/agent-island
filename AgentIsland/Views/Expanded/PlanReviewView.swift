@@ -5,17 +5,23 @@ struct PlanReviewView: View {
     let plan: PlanReview
     let onApprove: () -> Void
     let onReject: () -> Void
+    @State private var rejectHovered = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             // Header
             HStack(spacing: 10) {
-                AgentIconView(agentType: session.agentType, size: 16)
+                // Contextual icon with tinted background
+                Text("📄")
+                    .font(.system(size: 15))
+                    .frame(width: 30, height: 30)
+                    .background(.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(plan.title)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.indigo)
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
 
                     Text(session.agentType.displayName)
                         .font(.system(size: 11))
@@ -23,10 +29,6 @@ struct PlanReviewView: View {
                 }
 
                 Spacer()
-
-                Image(systemName: "doc.text")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.indigo.opacity(0.6))
             }
 
             // Markdown content
@@ -42,12 +44,14 @@ struct PlanReviewView: View {
                 Button(action: onReject) {
                     Text("Reject")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.8))
+                        .foregroundStyle(rejectHovered ? .white.opacity(0.9) : .white.opacity(0.8))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
-                        .background(.white.opacity(0.1), in: Capsule())
+                        .background(rejectHovered ? .white.opacity(0.14) : .white.opacity(0.1), in: Capsule())
+                        .animation(.easeOut(duration: 0.15), value: rejectHovered)
                 }
                 .buttonStyle(IslandButtonStyle())
+                .onHover { rejectHovered = $0 }
 
                 Button(action: onApprove) {
                     Text("Approve")
@@ -63,7 +67,7 @@ struct PlanReviewView: View {
         .padding(18)
         .frame(
             width: IslandSize.planReviewWidth,
-            height: IslandSize.planReviewHeight
+            height: IslandSize.planReviewHeight(for: plan)
         )
     }
 

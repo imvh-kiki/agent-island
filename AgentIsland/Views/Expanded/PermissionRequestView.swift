@@ -5,17 +5,22 @@ struct PermissionRequestView: View {
     let request: PermissionRequest
     let onApprove: () -> Void
     let onDeny: () -> Void
+    @State private var denyHovered = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // Header
             HStack(spacing: 10) {
-                AgentIconView(agentType: session.agentType, size: 16)
+                // Contextual icon with tinted background
+                Text("🛡️")
+                    .font(.system(size: 15))
+                    .frame(width: 30, height: 30)
+                    .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Permission Required")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(.white)
 
                     Text(session.agentType.displayName)
                         .font(.system(size: 11))
@@ -36,11 +41,14 @@ struct PermissionRequestView: View {
                 HStack(spacing: 6) {
                     Image(systemName: toolIcon(for: request.toolName))
                         .font(.system(size: 10))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(.white.opacity(0.6))
                     Text(toolLabel(for: request.toolName))
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.9))
                 }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
 
                 Text(request.displayDescription)
                     .font(.system(size: 11, design: isCommandTool(request.toolName) ? .monospaced : .default))
@@ -58,12 +66,14 @@ struct PermissionRequestView: View {
                 Button(action: onDeny) {
                     Text("Deny")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(denyHovered ? .white.opacity(0.85) : .white.opacity(0.7))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
-                        .background(.white.opacity(0.08), in: Capsule())
+                        .background(denyHovered ? .white.opacity(0.12) : .white.opacity(0.08), in: Capsule())
+                        .animation(.easeOut(duration: 0.15), value: denyHovered)
                 }
                 .buttonStyle(IslandButtonStyle())
+                .onHover { denyHovered = $0 }
 
                 Button(action: onApprove) {
                     Text("Allow")

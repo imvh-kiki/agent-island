@@ -6,3 +6,7 @@ build/
 *.xcuserstate
 DerivedData/
 .DS_Store
+
+# AI assistant tooling — not part of the app
+.agents/
+skills-lock.json

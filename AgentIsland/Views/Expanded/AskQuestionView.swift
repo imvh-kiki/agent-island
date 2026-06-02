@@ -16,6 +16,10 @@ struct AskQuestionView: View {
     @State private var otherText = ""
     /// Text for pure free-text questions (no options)
     @State private var textInput = ""
+    /// Hovered option ID for indigo border effect
+    @State private var hoveredOptionId: String?
+    /// Hovered cancel/back button
+    @State private var cancelHovered = false
 
     private var totalQuestions: Int { question.questions.count }
     private var currentSubQuestion: SubQuestion? {
@@ -48,7 +52,7 @@ struct AskQuestionView: View {
         .padding(18)
         .frame(
             width: IslandSize.questionWidth,
-            height: IslandSize.questionHeight
+            height: IslandSize.questionHeight(for: question)
         )
     }
 
@@ -56,21 +60,25 @@ struct AskQuestionView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            AgentIconView(agentType: session.agentType, size: 16)
+            // Contextual icon with tinted background
+            Text("❓")
+                .font(.system(size: 15))
+                .frame(width: 30, height: 30)
+                .background(.indigo.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text("Question")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.indigo)
+                        .foregroundStyle(.white)
 
                     if totalQuestions > 1 {
                         Text("\(currentIndex + 1)/\(totalQuestions)")
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.indigo.opacity(0.6))
+                            .foregroundStyle(.white.opacity(0.6))
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
-                            .background(.indigo.opacity(0.1), in: Capsule())
+                            .background(.white.opacity(0.1), in: Capsule())
                     }
                 }
 
@@ -119,7 +127,7 @@ struct AskQuestionView: View {
 
     private var freeTextInput: some View {
         VStack(spacing: 8) {
-            TextField("Type your answer...", text: $textInput)
+            TextField("", text: $textInput, prompt: Text("Type your answer...").foregroundColor(.white.opacity(0.4)))
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
                 .foregroundStyle(.white)
@@ -130,12 +138,14 @@ struct AskQuestionView: View {
                 Button(action: onCancel) {
                     Text("Cancel")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.8))
+                        .foregroundStyle(cancelHovered ? .white.opacity(0.9) : .white.opacity(0.8))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
-                        .background(.white.opacity(0.1), in: Capsule())
+                        .background(cancelHovered ? .white.opacity(0.14) : .white.opacity(0.1), in: Capsule())
+                        .animation(.easeOut(duration: 0.15), value: cancelHovered)
                 }
                 .buttonStyle(IslandButtonStyle())
+                .onHover { cancelHovered = $0 }
 
                 Button {
                     guard !textInput.isEmpty else { return }
@@ -171,12 +181,14 @@ struct AskQuestionView: View {
                 } label: {
                     Text("Back")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.8))
+                        .foregroundStyle(cancelHovered ? .white.opacity(0.9) : .white.opacity(0.8))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
-                        .background(.white.opacity(0.1), in: Capsule())
+                        .background(cancelHovered ? .white.opacity(0.14) : .white.opacity(0.1), in: Capsule())
+                        .animation(.easeOut(duration: 0.15), value: cancelHovered)
                 }
                 .buttonStyle(IslandButtonStyle())
+                .onHover { cancelHovered = $0 }
 
                 Button {
                     guard !otherText.isEmpty else { return }
@@ -200,6 +212,7 @@ struct AskQuestionView: View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 6) {
                 ForEach(sub.options) { option in
+                    let isHovered = hoveredOptionId == option.id
                     Button {
                         selectAnswer(option.label)
                     } label: {
@@ -207,45 +220,75 @@ struct AskQuestionView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(option.label)
                                     .font(.system(size: 12, weight: .medium))
-                                    .foregroundStyle(.white.opacity(0.9))
+                                    .foregroundStyle(isHovered ? .white : .white.opacity(0.9))
 
                                 if let desc = option.description {
                                     Text(desc)
                                         .font(.system(size: 10))
-                                        .foregroundStyle(.white.opacity(0.5))
+                                        .foregroundStyle(isHovered ? .white.opacity(0.65) : .white.opacity(0.5))
                                         .lineLimit(2)
                                 }
                             }
                             Spacer()
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 10))
-                                .foregroundStyle(.white.opacity(0.3))
+                                .foregroundStyle(isHovered ? .white.opacity(0.5) : .white.opacity(0.3))
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
-                        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                        .background(
+                            isHovered ? .white.opacity(0.12) : .white.opacity(0.06),
+                            in: RoundedRectangle(cornerRadius: 8)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(isHovered ? .white.opacity(0.2) : .clear, lineWidth: 1)
+                        )
                     }
                     .buttonStyle(IslandButtonStyle())
+                    .onHover { over in
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            hoveredOptionId = over ? option.id : nil
+                        }
+                    }
                 }
 
-                // "Other" option — always available
+                // "Other" option — same style as regular options
+                let otherHovered = hoveredOptionId == "__other__"
                 Button {
                     showOtherInput = true
                 } label: {
                     HStack {
-                        Text("Other")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.6))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Other...")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(otherHovered ? .white : .white.opacity(0.9))
+                            Text("Type a custom answer")
+                                .font(.system(size: 10))
+                                .foregroundStyle(otherHovered ? .white.opacity(0.65) : .white.opacity(0.5))
+                        }
                         Spacer()
-                        Image(systemName: "pencil")
+                        Image(systemName: "chevron.right")
                             .font(.system(size: 10))
-                            .foregroundStyle(.white.opacity(0.3))
+                            .foregroundStyle(otherHovered ? .white.opacity(0.5) : .white.opacity(0.3))
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
-                    .background(.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 8))
+                    .background(
+                        otherHovered ? .white.opacity(0.12) : .white.opacity(0.06),
+                        in: RoundedRectangle(cornerRadius: 8)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(otherHovered ? .white.opacity(0.2) : .clear, lineWidth: 1)
+                    )
                 }
                 .buttonStyle(IslandButtonStyle())
+                .onHover { over in
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        hoveredOptionId = over ? "__other__" : nil
+                    }
+                }
             }
         }
     }

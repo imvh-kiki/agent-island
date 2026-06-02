@@ -73,6 +73,19 @@ final class ClaudeCodeMonitor: AgentMonitor {
             }
         }
 
+        hookServer.onStop = { [weak self] sessionId in
+            // Turn ended — reset status to idle so the Island doesn't stay stuck
+            // on the last tool (e.g. "running Read") after the agent finishes.
+            // Stop is the authoritative "turn complete" signal; the log-based idle
+            // detection misses turns whose last action is a tool with no trailing text.
+            var sessions = self?._sessions.value ?? []
+            if let idx = sessions.firstIndex(where: { $0.id == sessionId }) {
+                sessions[idx].status = .idle
+                sessions[idx].currentTask = nil
+                self?._sessions.send(sessions)
+            }
+        }
+
         hookServer.onQuestion = { [weak self] question in
             self?._questions.send(question)
         }
@@ -159,25 +172,27 @@ final class ClaudeCodeMonitor: AgentMonitor {
         // Try tmux first — it can jump to the exact pane
         TmuxJumper.jumpToPane(containingPID: session.pid)
 
-        guard let terminal = ProcessUtils.findTerminalAncestor(of: session.pid) else {
-            // Fallback: activate Terminal.app
-            if let terminalURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") {
-                NSWorkspace.shared.openApplication(at: terminalURL, configuration: .init())
-            }
+        // 1. Preferred: walk the session's parent process tree to the exact
+        //    terminal app it runs in, then activate that process directly.
+        if let terminal = ProcessUtils.findTerminalAncestor(of: session.pid),
+           let app = NSRunningApplication(processIdentifier: pid_t(terminal.pid)) {
+            app.unhide()
+            app.activate(options: .activateIgnoringOtherApps)
             return
         }
 
-        // Activate the detected terminal app by its process ID
-        if let app = NSRunningApplication(processIdentifier: pid_t(terminal.pid)) {
-            app.unhide()
-            app.activate(options: .activateIgnoringOtherApps)
-        } else {
-            // Fallback: activate by bundle URL
-            let ws = NSWorkspace.shared
-            for runningApp in ws.runningApplications where runningApp.localizedName?.localizedCaseInsensitiveContains(terminal.name.components(separatedBy: "/").last ?? "") == true {
-                runningApp.activate(options: .activateIgnoringOtherApps)
-                return
-            }
+        // 2. Fallback: the parent walk failed (dead pid, re-parented child,
+        //    tmux/login intermediary). Activate whatever terminal the user is
+        //    actually running — never assume Apple Terminal.
+        if let term = ProcessUtils.runningTerminalApp() {
+            term.unhide()
+            term.activate(options: .activateIgnoringOtherApps)
+            return
+        }
+
+        // 3. Last resort: no known terminal is running at all — open Terminal.app.
+        if let terminalURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") {
+            NSWorkspace.shared.openApplication(at: terminalURL, configuration: .init())
         }
     }
 

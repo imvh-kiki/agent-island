@@ -2,27 +2,24 @@ import AVFoundation
 import SwiftUI
 
 /// Programmatic 8-bit synth sound effects — zero resource dependencies.
-/// Uses a single shared AVAudioEngine that auto-stops after idle.
-final class SoundManager {
+/// Renders tones to an in-memory WAV and plays them with `AVAudioPlayer`, whose
+/// `play()` returns a Bool instead of throwing an Objective-C exception. A bad
+/// audio-device state (unplugged headphones, Bluetooth switch, wake-from-sleep)
+/// therefore degrades to silence and can never abort the whole app — unlike
+/// `AVAudioPlayerNode.play()`, which raises an NSException that Swift can't catch.
+final class SoundManager: NSObject, AVAudioPlayerDelegate {
     static let shared = SoundManager()
 
     @AppStorage("soundEnabled") var soundEnabled = true
 
     private let sampleRate: Double = 44100
-    private let format: AVAudioFormat
 
-    // Shared engine + player — lazily created, auto-stopped after idle
-    private var engine: AVAudioEngine?
-    private var playerNode: AVAudioPlayerNode?
-    private var idleTimer: DispatchWorkItem?
-    private let engineLock = NSLock()
+    /// Players are retained until playback finishes — otherwise they're freed
+    /// mid-sound and you hear nothing.
+    private var activePlayers: [AVAudioPlayer] = []
+    private let lock = NSLock()
 
-    private init() {
-        guard let fmt = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1) else {
-            fatalError("[SoundManager] Failed to create audio format — this should never happen")
-        }
-        format = fmt
-    }
+    private override init() { super.init() }
 
     // MARK: - Sound Events
 
@@ -54,69 +51,37 @@ final class SoundManager {
         guard soundEnabled else { return }
 
         let samples = generateSamples(frequencies: frequencies, durations: durations, waveform: waveform)
+        guard !samples.isEmpty, let data = wavData(from: samples) else { return }
 
-        engineLock.lock()
-        let (engine, player) = ensureEngine()
-        engineLock.unlock()
-
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(samples.count)),
-              let channelData = buffer.floatChannelData?[0] else { return }
-        buffer.frameLength = AVAudioFrameCount(samples.count)
-        for i in 0..<samples.count {
-            channelData[i] = samples[i]
+        // try? + Bool return = no uncaught ObjC exception path → can't crash the app.
+        guard let player = try? AVAudioPlayer(data: data) else {
+            print("[SoundManager] Failed to create player")
+            return
         }
+        player.delegate = self
+        player.prepareToPlay()
 
-        guard engine.isRunning else { return }
+        lock.lock()
+        activePlayers.append(player)
+        lock.unlock()
 
-        player.scheduleBuffer(buffer, completionHandler: nil)
-        if !player.isPlaying {
-            player.play()
+        if !player.play() {
+            print("[SoundManager] play() returned false — degrading to silence")
+            removePlayer(player)
         }
-
-        scheduleIdleShutdown()
     }
 
-    /// Returns the shared engine + player, creating them if needed.
-    private func ensureEngine() -> (AVAudioEngine, AVAudioPlayerNode) {
-        if let engine, let playerNode, engine.isRunning {
-            return (engine, playerNode)
-        }
-
-        // Tear down old engine if it exists but isn't running
-        self.playerNode = nil
-        self.engine = nil
-
-        let engine = AVAudioEngine()
-        let player = AVAudioPlayerNode()
-        engine.attach(player)
-        engine.connect(player, to: engine.mainMixerNode, format: format)
-
-        do {
-            try engine.start()
-        } catch {
-            print("[SoundManager] Engine start error: \(error)")
-        }
-
-        self.engine = engine
-        self.playerNode = player
-        return (engine, player)
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        removePlayer(player)
     }
 
-    /// Stop the engine after 5 seconds of inactivity to free resources.
-    private func scheduleIdleShutdown() {
-        idleTimer?.cancel()
-        let item = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            self.engineLock.lock()
-            self.playerNode?.stop()
-            self.engine?.stop()
-            self.playerNode = nil
-            self.engine = nil
-            self.engineLock.unlock()
-        }
-        idleTimer = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: item)
+    private func removePlayer(_ player: AVAudioPlayer) {
+        lock.lock()
+        activePlayers.removeAll { $0 === player }
+        lock.unlock()
     }
+
+    // MARK: - Rendering
 
     private func generateSamples(frequencies: [Double], durations: [Double], waveform: Waveform) -> [Float] {
         var samples: [Float] = []
@@ -144,5 +109,43 @@ final class SoundManager {
             }
         }
         return samples
+    }
+
+    /// Wrap 16-bit PCM mono samples in a minimal WAV container for `AVAudioPlayer(data:)`.
+    private func wavData(from samples: [Float]) -> Data? {
+        let bitsPerSample = 16
+        let channels = 1
+        let bytesPerSample = bitsPerSample / 8
+        let dataSize = samples.count * bytesPerSample
+        let byteRate = Int(sampleRate) * channels * bytesPerSample
+        let blockAlign = channels * bytesPerSample
+
+        var data = Data(capacity: 44 + dataSize)
+        func putString(_ s: String) { data.append(contentsOf: s.utf8) }
+        func putU32(_ v: UInt32) { var le = v.littleEndian; withUnsafeBytes(of: &le) { data.append(contentsOf: $0) } }
+        func putU16(_ v: UInt16) { var le = v.littleEndian; withUnsafeBytes(of: &le) { data.append(contentsOf: $0) } }
+
+        // RIFF header
+        putString("RIFF")
+        putU32(UInt32(36 + dataSize))
+        putString("WAVE")
+        // fmt chunk
+        putString("fmt ")
+        putU32(16)                          // PCM fmt chunk size
+        putU16(1)                           // audio format = PCM
+        putU16(UInt16(channels))
+        putU32(UInt32(sampleRate))
+        putU32(UInt32(byteRate))
+        putU16(UInt16(blockAlign))
+        putU16(UInt16(bitsPerSample))
+        // data chunk
+        putString("data")
+        putU32(UInt32(dataSize))
+        for s in samples {
+            let clamped = max(-1.0, min(1.0, s))
+            let intSample = Int16(clamped * Float(Int16.max))
+            putU16(UInt16(bitPattern: intSample))
+        }
+        return data
     }
 }
